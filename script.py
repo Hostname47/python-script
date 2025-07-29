@@ -1,49 +1,103 @@
-import requests
-import time
-from requests.auth import HTTPBasicAuth
+#!/usr/bin/env python3
+"""
+Simple build script for Jenkins pipeline
+"""
 
-# === CONFIGURATION ===
-JENKINS_URL = "http://localhost:8080"
-JOB_NAME = "my-pipeline-job"
-USERNAME = "admin"
-API_TOKEN = "your-api-token"  # Get this from Jenkins -> your user -> Configure -> API Token
-POLL_INTERVAL = 3  # seconds
+import os
+import sys
+import subprocess
+import json
+from datetime import datetime
 
-# === TRIGGER BUILD ===
-def trigger_build():
-    url = f"{JENKINS_URL}/job/{JOB_NAME}/build"
-    response = requests.post(url, auth=HTTPBasicAuth(USERNAME, API_TOKEN))
-    if response.status_code == 201:
-        print("✅ Build triggered.")
-    else:
-        raise Exception(f"Failed to trigger build: {response.status_code} {response.text}")
+def log_message(message, level="INFO"):
+    """Log message with timestamp"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {level}: {message}")
 
-# === GET LAST BUILD NUMBER ===
-def get_last_build_number():
-    url = f"{JENKINS_URL}/job/{JOB_NAME}/api/json"
-    response = requests.get(url, auth=HTTPBasicAuth(USERNAME, API_TOKEN)).json()
-    return response['lastBuild']['number']
+def run_command(command, check=True):
+    """Execute shell command and return result"""
+    log_message(f"Executing: {command}")
+    try:
+        result = subprocess.run(
+            command, 
+            shell=True, 
+            capture_output=True, 
+            text=True, 
+            check=check
+        )
+        if result.stdout:
+            log_message(f"Output: {result.stdout.strip()}")
+        return result
+    except subprocess.CalledProcessError as e:
+        log_message(f"Command failed with exit code {e.returncode}", "ERROR")
+        log_message(f"Error output: {e.stderr}", "ERROR")
+        raise
 
-# === POLL BUILD STATUS ===
-def wait_for_build_completion(build_number):
-    while True:
-        url = f"{JENKINS_URL}/job/{JOB_NAME}/{build_number}/api/json"
-        response = requests.get(url, auth=HTTPBasicAuth(USERNAME, API_TOKEN)).json()
-        building = response['building']
-        if not building:
-            return response['result']
-        print("⏳ Waiting for build to finish...")
-        time.sleep(POLL_INTERVAL)
+def get_build_info():
+    """Get build information from environment variables"""
+    build_info = {
+        "build_number": os.getenv("BUILD_NUMBER", "unknown"),
+        "job_name": os.getenv("JOB_NAME", "unknown"),
+        "build_url": os.getenv("BUILD_URL", "unknown"),
+        "workspace": os.getenv("WORKSPACE", os.getcwd()),
+        "git_commit": os.getenv("GIT_COMMIT", "unknown"),
+        "git_branch": os.getenv("GIT_BRANCH", "unknown")
+    }
+    return build_info
 
-# === MAIN FLOW ===
+def create_build_artifact():
+    """Create a simple build artifact"""
+    build_info = get_build_info()
+    artifact_data = {
+        "build_timestamp": datetime.now().isoformat(),
+        "build_info": build_info,
+        "status": "success"
+    }
+    
+    artifact_path = "build_artifact.json"
+    with open(artifact_path, 'w') as f:
+        json.dump(artifact_data, f, indent=2)
+    
+    log_message(f"Created build artifact: {artifact_path}")
+    return artifact_path
+
+def main():
+    """Main build function"""
+    log_message("Starting build process")
+    
+    try:
+        # Print build information
+        build_info = get_build_info()
+        log_message("Build Information:")
+        for key, value in build_info.items():
+            log_message(f"  {key}: {value}")
+        
+        # Example build steps - customize as needed
+        log_message("Running build steps...")
+        
+        # Step 1: Check Python version
+        run_command("python3 --version")
+        
+        # Step 2: Install dependencies (if requirements.txt exists)
+        if os.path.exists("requirements.txt"):
+            log_message("Installing Python dependencies...")
+            run_command("pip install -r requirements.txt")
+        
+        # Step 3: Run tests (if test files exist)
+        if any(f.startswith("test_") and f.endswith(".py") for f in os.listdir(".")):
+            log_message("Running tests...")
+            run_command("python3 -m pytest -v", check=False)
+        
+        # Step 4: Create build artifact
+        artifact_path = create_build_artifact()
+        
+        log_message("Build completed successfully!")
+        return 0
+        
+    except Exception as e:
+        log_message(f"Build failed: {str(e)}", "ERROR")
+        return 1
+
 if __name__ == "__main__":
-    print("🚀 Starting Jenkins pipeline test...")
-    trigger_build()
-    time.sleep(2)  # slight delay to let Jenkins register the new build
-    build_number = get_last_build_number()
-    print(f"🔍 Monitoring build #{build_number}...")
-    result = wait_for_build_completion(build_number)
-    if result == "SUCCESS":
-        print("✅ Build succeeded.")
-    else:
-        print(f"❌ Build failed with result: {result}")
+    exit_code = main()
+    sys.exit(exit_code)
