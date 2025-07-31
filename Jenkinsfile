@@ -1,4 +1,4 @@
-node {
+node('jenkins-agent') {
     try {
         stage('Checkout') {
             // Pull code from Git repository
