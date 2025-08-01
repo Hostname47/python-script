@@ -15,7 +15,7 @@ def log_message(message, level="INFO"):
     print(f"[{timestamp}] {level}: {message}")
 
 def run_command(command, check=True):
-    """Execute shell command and return result"""
+    """ Execute shell command and return result """
     log_message(f"Executing: {command}")
     try:
         result = subprocess.run(
